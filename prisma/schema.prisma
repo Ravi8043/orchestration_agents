@@ -1,0 +1,54 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model AnalysisRun {
+  id                String    @id @default(uuid())
+  ticker            String    @db.VarChar(10)
+  timeframe         String    @default("30d") @db.VarChar(10)
+  includeSocial     Boolean   @default(true)
+  status            RunStatus @default(PENDING)
+  agentOutputs      Json?
+  consensusData     Json?
+  errorMessage      String?
+  retryCount        Int       @default(0)
+  llmModel          String    @default("gpt-5-mini") @db.VarChar(100)
+  newsSourcesCount  Int?
+  priceDataPoints   Int?
+  createdAt         DateTime  @default(now())
+  startedAt         DateTime?
+  completedAt       DateTime?
+  executionTimeSec  Int?
+  archives          AnalysisArchive[]
+
+  @@index([ticker, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+}
+
+model AnalysisArchive {
+  id                String      @id @default(uuid())
+  analysisRunId     String
+  analysisRun       AnalysisRun @relation(fields: [analysisRunId], references: [id], onDelete: Cascade)
+  archivedAt        DateTime    @default(now())
+  actualOutcome     String?
+  actualPriceChange Float?
+}

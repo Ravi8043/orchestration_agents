@@ -1,4 +1,4 @@
-import type { RunStatus } from "@prisma/client";
+import type { RunStatus } from "../../generated/prisma/client.js";
 import { AnalysisRunRepository } from "../../repositories/analysis-run.repository.js";
 import { enqueueAnalysisJob } from "./queue.service.js";
 import type { AnalyzeRequestInput } from "../../schemas/analysis.schema.js";

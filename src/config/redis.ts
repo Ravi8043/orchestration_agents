@@ -1,6 +1,10 @@
-import IORedis from "ioredis";
-import { env } from "./env.js";
+import { Redis } from "ioredis";
+import { RedisMemoryServer } from "redis-memory-server";
 
-export const redisConnection = new IORedis(env.REDIS_URL, {
+const redisServer = new RedisMemoryServer();
+const host = await redisServer.getHost();
+const port = await redisServer.getPort();
+
+export const redisConnection = new Redis(port, host, {
   maxRetriesPerRequest: null
 });

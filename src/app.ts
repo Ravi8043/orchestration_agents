@@ -1,5 +1,5 @@
 import express from "express";
-import pinoHttp from "pino-http";
+import { pinoHttp } from "pino-http";
 import { logger } from "./config/logger.js";
 import { requestIdMiddleware } from "./middleware/request-id.middleware.js";
 import { apiRouter } from "./routes/index.js";

@@ -25,7 +25,7 @@ export class RunAnalysisService {
         timeframe: run.timeframe,
         includeSocial: run.includeSocial
       });
-      const result = this.orchestrator.run(dataset);
+      const result = await this.orchestrator.run(dataset);
 
       await this.runRepository.markCompleted({
         id: runId,

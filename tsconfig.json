@@ -3,15 +3,23 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "outDir": "dist",
-    "rootDir": "src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "types": ["node", "vitest/globals"]
+    "outDir": "dist", //where the compiled js code goes to
+    "rootDir": "src", //where the source ts code is
+    "strict": true, //turn on all type safety
+    "esModuleInterop": true, //allows you to use import * as express from 'express' instead of require
+    "skipLibCheck": true, //skip checking types in node_modules
+    "forceConsistentCasingInFileNames": true, //force consistent casing in file names
+    "resolveJsonModule": true, //allow importing json files
+    "types": [
+      "node",
+      "vitest/globals"
+    ] //tells ts which global types to include
   },
-  "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
 }

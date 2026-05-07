@@ -7,7 +7,7 @@ type RunCreateInput = {
   timeframe: string;
   includeSocial: boolean;
   status?: RunStatus;
-};
+}
 
 export class AnalysisRunRepository {
   async create(input: RunCreateInput): Promise<AnalysisRun> {

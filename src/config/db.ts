@@ -4,7 +4,13 @@ import { PrismaClient } from "../generated/prisma/client.js";
 import { env } from "./env.js";
 import { logger } from "./logger.js";
 
-const pool = new pg.Pool({ connectionString: env.DATABASE_URL });
+const pool = new pg.Pool({
+  connectionString: env.DATABASE_URL,
+  max: 10,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000
+});
+
 const adapter = new PrismaPg(pool);
 
 export const prisma = new PrismaClient({
@@ -13,8 +19,13 @@ export const prisma = new PrismaClient({
 } as any);
 
 export async function connectDb(): Promise<void> {
-  await prisma.$connect();
-  logger.info("Postgres connected");
+  try {
+    await prisma.$connect();
+    logger.info("Postgres connected");
+  } catch (err) {
+    logger.error({ err }, "DB connection failed");
+    process.exit(1);
+  }
 }
 
 export async function disconnectDb(): Promise<void> {

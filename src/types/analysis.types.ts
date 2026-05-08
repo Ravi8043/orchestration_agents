@@ -52,10 +52,4 @@ export interface AnalysisDataset {
     trend: string;
     dataPoints: number;
   };
-  socialData?: {
-    sentimentScore: number;
-    mentionVolume: number;
-    bullishPct: number;
-    dataSource: string;
-  };
 }

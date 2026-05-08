@@ -13,23 +13,14 @@ export class DatasetService {
     timeframe: string;
     includeSocial: boolean;
   }): Promise<AnalysisDataset> {
-    const [newsData, priceData, socialData] = await Promise.all([
+    const [newsData, priceData] = await Promise.all([
       this.newsService.fetchNews(input.ticker),
-      this.priceService.getPriceData(input.ticker, input.timeframe),
-      input.includeSocial ? this.socialService.getSocialData(input.ticker) : Promise.resolve(undefined)
+      this.priceService.getPriceData(input.ticker),
     ]);
 
     return {
       ticker: input.ticker,
       timestamp: new Date().toISOString(),
-      newsData: {
-        headlines: newsData.articles.map((a) => a.title),
-        summaries: newsData.articles.map((a) => a.summary),
-        sources: newsData.articles.map((a) => a.url),
-        count: newsData.count,
-      },
-      priceData,
-      socialData
     };
   }
 }

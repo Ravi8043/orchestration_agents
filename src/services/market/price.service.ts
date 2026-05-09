@@ -12,14 +12,13 @@ import {
   PriceSnapshot,
   PriceCandle,
   DerivedFeatures,
-  Trend,
 } from "../../types/price.types.js";
 
 export class PriceService {
   constructor(private readonly finnhub: FinnhubProvider) { }
 
   /**
-   * Fetch comprehensive price data with agent-friendly structure
+   * Fetch comprehensive price data 
    */
   async getPriceData(ticker: string): Promise<PriceData> {
     if (!ticker?.trim()) {
@@ -120,10 +119,6 @@ export class PriceService {
     const change = quote.c - quote.pc;
     const changePercent = (change / quote.pc) * 100;
 
-    const trend = useFallback
-      ? this.calculateSimpleTrend(changePercent)
-      : this.calculateTrend(candles);
-
     const volatility = useFallback
       ? this.calculateSimpleVolatility(quote.h, quote.l, quote.c)
       : this.calculateVolatility(candles);
@@ -136,7 +131,6 @@ export class PriceService {
       pc: quote.pc,
       change: Number(change.toFixed(2)),
       changePercent: Number(changePercent.toFixed(2)),
-      trend,
       volatility,
       timestamp: Date.now(),
     };
@@ -224,26 +218,6 @@ export class PriceService {
     if (values.length === 0) return 0;
     const sum = values.reduce((acc, v) => acc + v, 0);
     return sum / values.length;
-  }
-
-  private calculateTrend(candles: Candle[]): Trend {
-    if (candles.length < 30) return "SIDEWAYS";
-
-    const closes = candles.map((c) => c.close);
-    const sma10 = this.calculateSma(closes.slice(-10));
-    const sma30 = this.calculateSma(closes.slice(-30));
-
-    const diffPct = ((sma10 - sma30) / sma30) * 100;
-
-    if (diffPct > 1) return "UPTREND";
-    if (diffPct < -1) return "DOWNTREND";
-    return "SIDEWAYS";
-  }
-
-  private calculateSimpleTrend(changePercent: number): Trend {
-    if (changePercent > 1) return "UPTREND";
-    if (changePercent < -1) return "DOWNTREND";
-    return "SIDEWAYS";
   }
 
   private calculateVolatility(candles: Candle[]): number {

@@ -1,15 +1,3 @@
-export interface FinnInput {
-    ticker: string;
-    resolution: string;
-    from: number;
-    to: number;
-}
-
-export interface FinnOutput {
-    ticker: string;
-    currentPrice: number;
-}
-
 export interface QuoteResponse {
     c: number; // current price
     d: number; // change
@@ -40,17 +28,7 @@ export interface Candle {
     timestamp: number;
 }
 
-export interface NewsItem {
-    category: string;
-    datetime: number;
-    headline: string;
-    id: number;
-    image: string;
-    related: string;
-    source: string;
-    summary: string;
-    url: string;
-}
+
 
 export interface GetCandlesParams {
     symbol: string;
@@ -59,16 +37,18 @@ export interface GetCandlesParams {
     to: number;
 }
 
-export interface GetCompanyNewsParams {
-    symbol: string;
-    from: string;
-    to: string;
-}
 
 export interface GetQuoteParams {
     symbol: string;
 }
 
-export interface GetCompanyProfileParams {
-    symbol: string;
+export interface NewsArticle {
+    headline: string;
+    summary: string;
+    datetime: number;
+}
+
+export interface NewsData {
+    articles: NewsArticle[];
+    count: number;
 }

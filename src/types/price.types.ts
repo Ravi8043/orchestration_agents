@@ -1,4 +1,3 @@
-export type Trend = "UPTREND" | "DOWNTREND" | "SIDEWAYS";
 
 // ─── Snapshot: real-time quote data ─────────────────────────────────────────
 export interface PriceSnapshot {
@@ -9,7 +8,6 @@ export interface PriceSnapshot {
     pc: number; // previous close
     change: number;
     changePercent: number;
-    trend: Trend;
     volatility: number;
     timestamp: number;
 }
@@ -36,6 +34,6 @@ export interface DerivedFeatures {
 // ─── Composite response: agent-friendly market intelligence ─────────────────
 export interface PriceData {
     snapshot: PriceSnapshot;
-    candles: PriceCandle[];
+    recentCandles: PriceCandle[];
     derivedFeatures: DerivedFeatures;
 }

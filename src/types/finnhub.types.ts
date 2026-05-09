@@ -28,7 +28,11 @@ export interface Candle {
     timestamp: number;
 }
 
-
+export interface NewsItem {
+    datetime: number;
+    headline: string;
+    summary: string;
+}
 
 export interface GetCandlesParams {
     symbol: string;
@@ -37,11 +41,17 @@ export interface GetCandlesParams {
     to: number;
 }
 
-
+export interface GetCompanyNewsParams {
+    symbol: string;
+    from: string;
+    to: string;
+}
 export interface GetQuoteParams {
     symbol: string;
 }
-
+export interface GetCompanyProfileParams {
+    symbol: string;
+}
 export interface NewsArticle {
     headline: string;
     summary: string;

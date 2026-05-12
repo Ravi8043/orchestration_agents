@@ -60,15 +60,9 @@ export interface AnalysisDataset {
   priceData: {
     currentPrice: number;
     changePct: number;
-    rsi: number;
-    macdSignal: "BULLISH" | "BEARISH";
-    trend: string;
     dataPoints: number;
-    /** Full structured snapshot from PriceService */
     snapshot: PriceSnapshot;
-    /** Last N daily candles for agent reasoning */
     recentCandles: PriceCandle[];
-    /** Derived quantitative features (SMA, ATR, etc.) */
     derivedFeatures: DerivedFeatures;
   };
 }

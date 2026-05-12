@@ -7,18 +7,18 @@ import {
     GetCompanyNewsParams,
     GetCompanyProfileParams,
 } from "../types/finnhub.types.js";
-
-const finnhubApiKey = process.env.FINNHUB_API_KEY;
-
-if (!finnhubApiKey) {
-    throw new Error("FINNHUB_API_KEY is missing.");
-}
+import { env } from "../config/env.js";
 
 export class FinnhubProvider {
     private readonly baseUrl = "https://finnhub.io/api/v1";
+    private readonly apiKey: string;
+
+    constructor(apiKey = env.FINNHUB_API_KEY) {
+        this.apiKey = apiKey;
+    }
 
     private async request<T>(endpoint: string): Promise<T> {
-        const url = `${this.baseUrl}${endpoint}&token=${finnhubApiKey}`;
+        const url = `${this.baseUrl}${endpoint}&token=${this.apiKey}`;
 
         const response = await fetch(url);
 

@@ -11,7 +11,15 @@ describe("parseConsensus", () => {
       riskLevel: "MODERATE",
       reasoning: "Constructive setup",
       stopLoss: 182.5,
-      takeProfit: 210.4
+      takeProfit: 210.4,
+      timeHorizon: "2-4 weeks",
+      keyRisks: ["Earnings volatility"],
+      analystWeightsUsed: {
+        MomentumTrader: 0.4,
+        ValueInvestor: 0.3,
+        Contrarian: 0.3
+      },
+      disagreements: []
     });
 
     expect(result.stopLoss).toBe(182.5);

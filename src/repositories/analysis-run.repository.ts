@@ -1,6 +1,11 @@
 import type { AnalysisRun, RunStatus, Prisma } from "../generated/prisma/client.js";
 import { prisma } from "../config/db.js";
-import type { AgentOutput, ConsensusData } from "../types/analysis.types.js";
+import type {
+  AgentOutput,
+  ConsensusData,
+  DebateTraceEntry,
+  ToolTraceEntry,
+} from "../types/analysis.types.js";
 
 type RunCreateInput = {
   ticker: string;
@@ -47,21 +52,27 @@ export class AnalysisRunRepository {
     id: string;
     agentOutputs: AgentOutput[];
     consensusData: ConsensusData;
+    toolTrace: ToolTraceEntry[];
+    debateTrace: DebateTraceEntry[];
     executionTimeSec: number;
     newsSourcesCount: number;
     priceDataPoints: number;
   }): Promise<void> {
+    const data = {
+      status: "COMPLETED",
+      completedAt: new Date(),
+      executionTimeSec: input.executionTimeSec,
+      agentOutputs: input.agentOutputs as unknown as Prisma.InputJsonValue,
+      consensusData: input.consensusData as unknown as Prisma.InputJsonValue,
+      toolTrace: input.toolTrace as unknown as Prisma.InputJsonValue,
+      debateTrace: input.debateTrace as unknown as Prisma.InputJsonValue,
+      newsSourcesCount: input.newsSourcesCount,
+      priceDataPoints: input.priceDataPoints
+    } as any;
+
     await prisma.analysisRun.update({
       where: { id: input.id },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        executionTimeSec: input.executionTimeSec,
-        agentOutputs: input.agentOutputs as unknown as Prisma.InputJsonValue,
-        consensusData: input.consensusData as unknown as Prisma.InputJsonValue,
-        newsSourcesCount: input.newsSourcesCount,
-        priceDataPoints: input.priceDataPoints
-      }
+      data
     });
   }
 

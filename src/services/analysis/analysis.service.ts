@@ -1,6 +1,6 @@
 import type { RunStatus } from "../../generated/prisma/client.js";
 import { AnalysisRunRepository } from "../../repositories/analysis-run.repository.js";
-import { enqueueAnalysisJob } from "./queue.service.js";
+import { cancelAnalysisJob, enqueueAnalysisJob } from "./queue.service.js";
 import type { AnalyzeRequestInput } from "../../schemas/analysis.schema.js";
 import { AppError } from "../../lib/errors/app-error.js";
 
@@ -71,6 +71,10 @@ export class AnalysisService {
       status: run.status,
       agents: agentOutputs,
       consensus: run.consensusData,
+      traces: {
+        toolTrace: (run as any).toolTrace ?? [],
+        debateTrace: (run as any).debateTrace ?? []
+      },
       metadata: {
         llmModel: run.llmModel,
         createdAt: run.createdAt,
@@ -97,8 +101,15 @@ export class AnalysisService {
       throw new AppError(`Cannot cancel ${run.status.toLowerCase()} run`, 400);
     }
 
+    const removedFromQueue = await cancelAnalysisJob(runId);
     await this.runRepository.markCancelled(runId);
-    return { message: "Analysis cancelled", runId };
+    return {
+      message: removedFromQueue
+        ? "Analysis cancelled before execution"
+        : "Cancellation requested; active jobs stop at the next checkpoint",
+      runId,
+      removedFromQueue
+    };
   }
 
   async stats() {

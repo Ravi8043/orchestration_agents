@@ -16,6 +16,7 @@ const envSchema = z.object({
   LLM_MODEL: z.string().default("gpt-5-mini"),
   OPENAI_API_KEY: z.string().optional(),
   GOOGLE_API_KEY: z.string().optional(),
+  FINNHUB_API_KEY: z.string().min(1),
   TAVILY_API_KEY: z.string().optional()
 });
 

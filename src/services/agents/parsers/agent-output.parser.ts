@@ -16,6 +16,28 @@ const agentOutputSchema = z.object({
   bullCase: z.string(),
   bearCase: z.string(),
   keyRisks: z.array(z.string()),
+  evidence: z
+    .array(
+      z.object({
+        toolName: z.string(),
+        summary: z.string(),
+        usedFor: z.string(),
+      })
+    )
+    .default([]),
+  toolCalls: z
+    .array(
+      z.object({
+        agentName: z.string(),
+        toolName: z.string(),
+        input: z.record(z.unknown()),
+        outputSummary: z.string(),
+        calledAt: z.string(),
+        error: z.string().optional(),
+      })
+    )
+    .default([]),
+  revisionNotes: z.string().optional(),
 });
 
 export function parseAgentOutput(input: unknown): AgentOutput {

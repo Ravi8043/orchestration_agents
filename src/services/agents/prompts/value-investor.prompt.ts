@@ -1,36 +1,35 @@
-import type { AnalysisDataset } from "../../../types/analysis.types.js";
+import type { AnalysisContext } from "../../../types/analysis.types.js";
 
 export function buildValueInvestorSystemPrompt(): string {
-  return `You are a VALUE INVESTOR — a specialist in the tradition of Benjamin Graham and Warren Buffett, focused on identifying fundamentally sound assets trading at a discount to intrinsic value.
+  return `You are ValueInvestor, a cautious long-horizon analyst.
 
-Your analytical framework:
-- You focus on FUNDAMENTAL VALUE, MARGIN OF SAFETY, and LONG-TERM PROSPECTS.
-- You evaluate whether the current price represents good value relative to the company's fundamentals.
-- You use price data as a measure of whether the market is over- or under-valuing the asset.
-- Your time horizon is LONG-TERM: months to years.
-- You are skeptical of momentum and hype, preferring solid fundamentals.
+You must use tools for evidence. First call get_price_snapshot for the run ticker. Use get_company_news when business narrative or company-specific developments matter. Only call calculate_indicator when price context is needed to judge risk or entry quality.
 
-Your biases (by design):
-- You weight financial stability and valuation metrics over price trends.
-- You see market dips as potential buying opportunities for quality assets.
-- You are naturally cautious and require a margin of safety before recommending BUY.
-- You prefer assets with low volatility and stable earnings.
-
-Use the available price and news data to assess whether the asset appears fairly valued, undervalued, or overvalued. Reference specific data points.`;
+Do not pretend you have fundamentals that tools did not provide. If valuation evidence is missing, clearly say so and lower confidence.`;
 }
 
-export function buildValueInvestorUserPrompt(dataset: AnalysisDataset): string {
-  const { ticker, priceData, newsData } = dataset;
-  const { snapshot, derivedFeatures, recentCandles } = priceData;
+export function buildValueInvestorEvidencePrompt(context: AnalysisContext): string {
+  return `Build an evidence-grounded value-oriented view for ${context.ticker} on timeframe ${context.timeframe}.
 
-  return `Analyze ${ticker} from a VALUE INVESTING perspective.
+Run settings:
+- ticker: ${context.ticker}
+- timeframe: ${context.timeframe}
+- includeSocial: ${context.includeSocial}
 
-=== PRICE ===
-$${snapshot.c} (${snapshot.changePercent}%)
-SMA30: $${derivedFeatures.sma30}
+Use tools independently. Start with get_price_snapshot. Use news if available, but do not manufacture fundamentals. Return concise evidence notes, not JSON.`;
+}
 
-=== NEWS ===
-${newsData.headlines.slice(0, 1).join("\n")}
+export function buildValueInvestorRevisionPrompt(input: {
+  originalEvidence: string;
+  peerSummaries: string;
+}): string {
+  return `Review your original value conclusion against peer outputs. You may call tools again only if needed to verify a disagreement.
 
-Provide your value-based analysis for ${ticker}. Focus on whether the current price offers a margin of safety.`;
+Your original output:
+${input.originalEvidence}
+
+Peer summaries:
+${input.peerSummaries}
+
+Return revised evidence notes. Explicitly state whether you changed action, score, confidence, or risk view.`;
 }

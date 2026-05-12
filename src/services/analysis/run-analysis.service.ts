@@ -1,6 +1,5 @@
 import { AnalysisRunRepository } from "../../repositories/analysis-run.repository.js";
 import { OrchestratorService } from "../agents/orchestrator.service.js";
-import { DatasetService } from "../market/dataset.service.js";
 import { secondsBetween } from "../../lib/utils/time.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../config/logger.js";
@@ -9,7 +8,6 @@ import { AppError } from "../../lib/errors/app-error.js";
 export class RunAnalysisService {
   private readonly runRepository = new AnalysisRunRepository();
   private readonly orchestrator = new OrchestratorService();
-  private readonly datasetService = new DatasetService();
 
   /**
    * Execute a full analysis pipeline for a given run.
@@ -28,6 +26,10 @@ export class RunAnalysisService {
     if (!run) {
       throw new AppError("Analysis run not found", 404);
     }
+    if (run.status === "CANCELLED") {
+      logger.info({ runId }, "RunAnalysisService: skipping cancelled run");
+      return;
+    }
 
     const startedAt = new Date();
     await this.runRepository.markRunning(runId, env.LLM_MODEL);
@@ -38,24 +40,26 @@ export class RunAnalysisService {
     );
 
     try {
-      // Phase 1: Build the aggregated dataset
-      const dataset = await this.datasetService.buildDataset({
+      const context = {
+        runId,
         ticker: run.ticker,
         timeframe: run.timeframe,
         includeSocial: run.includeSocial,
-      });
+      };
+      await this.assertRunIsNotCancelled(runId);
 
-      // Phase 2: Run multi-agent orchestration
-      const result = await this.orchestrator.run(dataset);
+      const result = await this.orchestrator.run(context);
+      await this.assertRunIsNotCancelled(runId);
 
-      // Phase 3: Persist results
       await this.runRepository.markCompleted({
         id: runId,
         agentOutputs: result.agentOutputs,
         consensusData: result.consensus,
+        toolTrace: result.toolTrace,
+        debateTrace: result.debateTrace,
         executionTimeSec: secondsBetween(startedAt, new Date()),
-        newsSourcesCount: dataset.newsData.count,
-        priceDataPoints: dataset.priceData.dataPoints,
+        newsSourcesCount: this.countNewsSources(result.toolTrace),
+        priceDataPoints: this.countPriceDataPoints(result.toolTrace),
       });
 
       logger.info(
@@ -68,6 +72,12 @@ export class RunAnalysisService {
         "RunAnalysisService: execution completed"
       );
     } catch (error) {
+      const currentRun = await this.runRepository.findById(runId);
+      if (currentRun?.status === "CANCELLED") {
+        logger.info({ runId, ticker: run.ticker }, "RunAnalysisService: stopped cancelled run");
+        return;
+      }
+
       await this.runRepository.incrementRetryCount(runId);
       await this.runRepository.markFailed(
         runId,
@@ -81,5 +91,28 @@ export class RunAnalysisService {
 
       throw error;
     }
+  }
+
+  private async assertRunIsNotCancelled(runId: string): Promise<void> {
+    const currentRun = await this.runRepository.findById(runId);
+    if (currentRun?.status === "CANCELLED") {
+      throw new AppError("Analysis run was cancelled", 409, true);
+    }
+  }
+
+  private countNewsSources(toolTrace: Array<{ toolName: string; outputSummary: string }>): number {
+    const newsCall = toolTrace.find((entry) => entry.toolName === "get_company_news");
+    if (!newsCall) return 0;
+
+    const match = newsCall.outputSummary.match(/^(\d+)/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  private countPriceDataPoints(toolTrace: Array<{ toolName: string; outputSummary: string }>): number {
+    const priceCall = toolTrace.find((entry) => entry.toolName === "get_price_snapshot");
+    if (!priceCall) return 0;
+
+    const match = priceCall.outputSummary.match(/,\s*(\d+)\s+recent candles/);
+    return match ? Number(match[1]) : 0;
   }
 }

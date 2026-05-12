@@ -26,9 +26,15 @@ export interface PriceCandle {
 export interface DerivedFeatures {
     sma10: number;
     sma30: number;
+    rsi14: number | null;
+    macd: number | null;
+    macdSignal: number | null;
+    macdHistogram: number | null;
     atrPercent: number;
     priceVsSma10Percent: number;
     priceVsSma30Percent: number;
+    trend: "UPTREND" | "DOWNTREND" | "SIDEWAYS" | "INSUFFICIENT_DATA";
+    trendStrength: number;
 }
 
 // ─── Composite response: agent-friendly market intelligence ─────────────────
@@ -37,3 +43,35 @@ export interface PriceData {
     recentCandles: PriceCandle[];
     derivedFeatures: DerivedFeatures;
 }
+
+export interface LeanPriceSnapshot {
+    ticker: string;
+    timeframe: string;
+    snapshot: PriceSnapshot;
+    recentCandles: PriceCandle[];
+    derivedFeatures: Pick<DerivedFeatures, "sma10" | "sma30">;
+    dataAvailability: {
+        hasCandles: boolean;
+        candleCount: number;
+        asOf: string;
+    };
+}
+
+export type IndicatorResult =
+    | { indicator: "rsi14"; value: number | null }
+    | {
+        indicator: "macd";
+        value: {
+            macd: number | null;
+            signal: number | null;
+            histogram: number | null;
+        };
+    }
+    | { indicator: "atrPercent"; value: number }
+    | {
+        indicator: "trend";
+        value: {
+            trend: DerivedFeatures["trend"];
+            trendStrength: number;
+        };
+    };

@@ -39,7 +39,7 @@ export class DatasetService {
     // Fetch news and price data concurrently
     const [newsItems, priceData] = await Promise.all([
       this.fetchNews(ticker),
-      this.fetchPrice(ticker),
+      this.fetchPrice(ticker, timeframe),
     ]);
 
     const dataset: AnalysisDataset = {
@@ -55,6 +55,9 @@ export class DatasetService {
         currentPrice: priceData.snapshot.c,
         changePct: priceData.snapshot.changePercent,
         dataPoints: priceData.recentCandles.length,
+        rsi: priceData.derivedFeatures.rsi14,
+        macdSignal: this.classifyMacdSignal(priceData.derivedFeatures.macdHistogram),
+        trend: priceData.derivedFeatures.trend,
         snapshot: priceData.snapshot,
         recentCandles: priceData.recentCandles,
         derivedFeatures: priceData.derivedFeatures,
@@ -85,12 +88,21 @@ export class DatasetService {
     }
   }
 
-  private async fetchPrice(ticker: string): Promise<PriceData> {
+  private async fetchPrice(ticker: string, timeframe: string): Promise<PriceData> {
     try {
-      return await this.priceService.getPriceData(ticker);
+      return await this.priceService.getPriceData(ticker, timeframe);
     } catch (error) {
       logger.error({ err: error, ticker }, "Failed to fetch price data");
       throw new AppError("Critical failure: cannot fetch price data for analysis", 502, true);
     }
+  }
+
+  private classifyMacdSignal(
+    histogram: number | null
+  ): AnalysisDataset["priceData"]["macdSignal"] {
+    if (histogram === null) return "INSUFFICIENT_DATA";
+    if (histogram > 0.05) return "BULLISH";
+    if (histogram < -0.05) return "BEARISH";
+    return "NEUTRAL";
   }
 }

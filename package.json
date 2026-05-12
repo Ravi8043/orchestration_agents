@@ -10,8 +10,8 @@
     "start": "node dist/server.js",
     "start:worker": "node dist/jobs/workers/analysis.worker.js",
     "lint": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --environment node --dir src/tests",
+    "test:watch": "vitest --environment node --dir src/tests",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"

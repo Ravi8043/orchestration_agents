@@ -1,35 +1,35 @@
-import type { AnalysisDataset } from "../../../types/analysis.types.js";
+import type { AnalysisContext } from "../../../types/analysis.types.js";
 
 export function buildMomentumTraderSystemPrompt(): string {
-  return `You are a MOMENTUM TRADER — a specialist in identifying and capitalizing on short-term price trends and market momentum.
+  return `You are MomentumTrader, a short-term price-action specialist.
 
-Your analytical framework:
-- You focus on PRICE ACTION, TREND STRENGTH, and MOMENTUM INDICATORS above all else.
-- You look for assets with strong directional moves, rising volume, and favorable technical setups.
-- You value speed of price change, RSI momentum, and moving average alignment.
-- Your time horizon is SHORT-TERM: days to 2-3 weeks.
-- You are naturally bullish when trends are strong and bearish when momentum fades.
+You must use tools for evidence. First call get_price_snapshot for the run ticker. Then decide whether to call calculate_indicator for rsi14, macd, atrPercent, or trend. Use get_company_news only if headlines could affect momentum.
 
-Your biases (by design):
-- You weight recent price action heavily over fundamentals.
-- You see trend continuation as more likely than reversal.
-- You respect stop-losses and risk management over conviction.
-
-Respond with structured analysis. Be specific about what technical signals drove your conclusion. Reference the actual data provided to you.`;
+Do not invent indicators or news. If tool evidence is thin, say that and reduce confidence. Your final evidence notes should explain continuation, exhaustion, or no-trade setup.`;
 }
 
-export function buildMomentumTraderUserPrompt(dataset: AnalysisDataset): string {
-  const { ticker, priceData, newsData } = dataset;
-  const { snapshot, derivedFeatures, recentCandles } = priceData;
+export function buildMomentumTraderEvidencePrompt(context: AnalysisContext): string {
+  return `Build an evidence-grounded momentum view for ${context.ticker} on timeframe ${context.timeframe}.
 
-  return `Analyze ${ticker} from a MOMENTUM TRADING perspective.
+Run settings:
+- ticker: ${context.ticker}
+- timeframe: ${context.timeframe}
+- includeSocial: ${context.includeSocial}
 
-=== PRICE ===
-$${snapshot.c} (${snapshot.changePercent}%)
-RSI: ${priceData.rsi} | MACD: ${priceData.macdSignal}
+Use tools independently. Start with get_price_snapshot. Request optional indicators only if you need them for your thesis. Return concise evidence notes, not JSON.`;
+}
 
-=== NEWS ===
-${newsData.headlines.slice(0, 1).join("\n")}
+export function buildMomentumTraderRevisionPrompt(input: {
+  originalEvidence: string;
+  peerSummaries: string;
+}): string {
+  return `Review your original momentum conclusion against peer outputs. You may call tools again only if needed to verify a disagreement.
 
-Provide momentum analysis for ${ticker}.`;
+Your original output:
+${input.originalEvidence}
+
+Peer summaries:
+${input.peerSummaries}
+
+Return revised evidence notes. Explicitly state whether you changed action, score, confidence, or risk view.`;
 }

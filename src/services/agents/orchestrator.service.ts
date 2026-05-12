@@ -3,174 +3,164 @@ import { MomentumTraderAgent } from "./implementations/momentum-trader.agent.js"
 import { ValueInvestorAgent } from "./implementations/value-investor.agent.js";
 import { ContrarianAgent } from "./implementations/contrarian.agent.js";
 import { ModeratorAgent } from "./implementations/moderator.agent.js";
+import { AgentToolFactory } from "./tools/agent-tool.factory.js";
 
 import type {
-  AnalysisDataset,
   AgentOutput,
+  AnalysisContext,
+  DebateTraceEntry,
   OrchestratorResult,
+  ToolTraceEntry,
 } from "../../types/analysis.types.js";
 
-/**
- * OrchestratorService — pure workflow coordinator.
- *
- * Responsibilities:
- *   1. Instantiate specialist agents
- *   2. Run specialists concurrently against the dataset
- *   3. Collect outputs
- *   4. Pass all outputs to the moderator for consensus
- *   5. Return the structured result for persistence
- *
- * This service performs NO reasoning, scoring, or synthesis itself.
- * All intelligence lives in the agent layer.
- */
+type SpecialistAgent = {
+  identity: { name: string; role: string };
+  analyze: (context: AnalysisContext, toolFactory: AgentToolFactory) => Promise<AgentOutput>;
+  revise: (
+    context: AnalysisContext,
+    originalOutput: AgentOutput,
+    peerOutputs: AgentOutput[],
+    toolFactory: AgentToolFactory
+  ) => Promise<AgentOutput>;
+};
+
+type Moderator = {
+  identity: { name: string; role: string };
+  synthesize: (
+    context: AnalysisContext,
+    agentOutputs: AgentOutput[],
+    toolFactory: AgentToolFactory
+  ) => Promise<OrchestratorResult["consensus"]>;
+};
+
 export class OrchestratorService {
-  private readonly momentumTrader = new MomentumTraderAgent();
+  private readonly agentsToRun: SpecialistAgent[];
+  private readonly moderator: Moderator;
+  private readonly createToolFactory: (
+    context: AnalysisContext,
+    trace: ToolTraceEntry[]
+  ) => AgentToolFactory;
 
-  private readonly valueInvestor = new ValueInvestorAgent();
+  constructor(options: {
+    agents?: SpecialistAgent[];
+    moderator?: Moderator;
+    createToolFactory?: (context: AnalysisContext, trace: ToolTraceEntry[]) => AgentToolFactory;
+  } = {}) {
+    this.agentsToRun = options.agents ?? [
+      new MomentumTraderAgent(),
+      new ValueInvestorAgent(),
+      new ContrarianAgent(),
+    ];
+    this.moderator = options.moderator ?? new ModeratorAgent();
+    this.createToolFactory =
+      options.createToolFactory ?? ((ctx, trace) => new AgentToolFactory(ctx, trace));
+  }
 
-  private readonly contrarian = new ContrarianAgent();
+  async run(context: AnalysisContext): Promise<OrchestratorResult> {
+    const { ticker } = context;
+    const toolTrace: OrchestratorResult["toolTrace"] = [];
+    const debateTrace: DebateTraceEntry[] = [];
+    const toolFactory = this.createToolFactory(context, toolTrace);
 
-  private readonly moderator = new ModeratorAgent();
-
-  async run(dataset: AnalysisDataset): Promise<OrchestratorResult> {
-    const { ticker } = dataset;
-
-    logger.info(
-      { ticker },
-      "Orchestrator: starting multi-agent analysis"
-    );
-
+    logger.info({ ticker, runId: context.runId }, "Orchestrator: starting agentic analysis");
     const startMs = Date.now();
 
-    // ── Phase 1: Run specialist agents concurrently ──────────────────────
-
-    logger.info(
-      { ticker },
-      "Orchestrator: dispatching specialist agents"
+    const evidenceResults = await Promise.allSettled(
+      this.agentsToRun.map((agent) => agent.analyze(context, toolFactory))
     );
 
-    const agentsToRun = [
-      this.momentumTrader,
-      this.valueInvestor,
-      this.contrarian,
-    ];
-
-    /**
-     * Promise.allSettled()
-     *
-     * Runs ALL agent promises concurrently.
-     *
-     * Unlike Promise.all():
-     * - one failure DOES NOT crash everything
-     * - we receive both fulfilled and rejected results
-     * [
-  {
-    status: "fulfilled",
-    value: "hello"
-  },
-
-  {
-    status: "rejected",
-    reason: "boom"
-  }
-]
-// That structure is built into JavaScript itself.
-     */
-    const specialistResults = await Promise.allSettled(
-      agentsToRun.map((agent) => agent.analyze(dataset))
-    );
-
-    const agentOutputs: AgentOutput[] = [];
+    const firstPassOutputs: AgentOutput[] = [];
     const failures: string[] = [];
 
-    // ── Process settled results ───────────────────────────────────────────
-
-    for (const result of specialistResults) {
-      // Successful agent execution
+    for (const result of evidenceResults) {
       if (result.status === "fulfilled") {
-        agentOutputs.push(result.value);
+        firstPassOutputs.push(result.value);
+        debateTrace.push(this.createDebateTrace(result.value.name, "evidence", result.value.reasoning));
       } else {
-        // Normalize error safely
-        const errorMsg =
-          result.reason instanceof Error
-            ? result.reason.message
-            : String(result.reason);
-
-        failures.push(errorMsg);
-
-        logger.error(
-          {
-            ticker,
-            err: result.reason,
-          },
-          "Orchestrator: specialist agent failed"
-        );
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        failures.push(message);
+        logger.error({ ticker, err: result.reason }, "Orchestrator: evidence phase failed");
       }
     }
 
-    // ── Require minimum successful agents ────────────────────────────────
-
-    if (agentOutputs.length < 2) {
-      const errorDetail =
-        `Only ${agentOutputs.length} of 3 specialists succeeded. ` +
-        `Failures: ${failures.join("; ")}`;
-
-      logger.error(
-        {
-          ticker,
-          failures,
-        },
-        "Orchestrator: insufficient specialist outputs"
-      );
-
+    if (firstPassOutputs.length < 2) {
       throw new Error(
-        `Orchestration failed: ${errorDetail}`
+        `Orchestration failed: only ${firstPassOutputs.length} of 3 specialists completed evidence phase. Failures: ${failures.join("; ")}`
       );
     }
 
-    logger.info(
-      {
-        ticker,
-        successCount: agentOutputs.length,
-        failCount: failures.length,
-        agents: agentOutputs.map(
-          (a) => a.name
-        ),
-      },
-      "Orchestrator: specialist phase complete"
+    const revisionResults = await Promise.allSettled(
+      firstPassOutputs.map((output) => {
+        const agent = this.agentsToRun.find((candidate) => candidate.identity.name === output.name);
+        if (!agent) return Promise.resolve(output);
+        const peers = firstPassOutputs.filter((peer) => peer.name !== output.name);
+        return agent.revise(context, output, peers, toolFactory);
+      })
     );
 
-    // ── Phase 2: Moderator synthesis ─────────────────────────────────────
+    const revisedOutputs: AgentOutput[] = [];
+    for (const result of revisionResults) {
+      if (result.status === "fulfilled") {
+        revisedOutputs.push(result.value);
+        debateTrace.push(
+          this.createDebateTrace(
+            result.value.name,
+            "revision",
+            result.value.revisionNotes ?? result.value.reasoning
+          )
+        );
+      } else {
+        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+        failures.push(message);
+        logger.error({ ticker, err: result.reason }, "Orchestrator: revision phase failed");
+      }
+    }
 
-    logger.info(
-      { ticker },
-      "Orchestrator: dispatching moderator agent"
-    );
-
-    const consensus =
-      await this.moderator.synthesize(
-        dataset,
-        agentOutputs
+    if (revisedOutputs.length < 2) {
+      throw new Error(
+        `Orchestration failed: only ${revisedOutputs.length} specialists completed revision phase. Failures: ${failures.join("; ")}`
       );
+    }
 
-    const totalDurationMs =
-      Date.now() - startMs;
+    const consensus = await this.moderator.synthesize(context, revisedOutputs, toolFactory);
+    debateTrace.push(
+      this.createDebateTrace(
+        this.moderator.identity.name,
+        "moderation",
+        `${consensus.action} with confidence ${consensus.confidence}. ${consensus.reasoning}`
+      )
+    );
 
     logger.info(
       {
         ticker,
-        totalDurationMs,
+        runId: context.runId,
+        totalDurationMs: Date.now() - startMs,
         consensusAction: consensus.action,
-        consensusScore: consensus.score,
-        consensusConfidence:
-          consensus.confidence,
+        consensusConfidence: consensus.confidence,
+        toolCallCount: toolTrace.length,
       },
-      "Orchestrator: analysis complete"
+      "Orchestrator: agentic analysis complete"
     );
 
     return {
-      agentOutputs,
+      agentOutputs: revisedOutputs,
       consensus,
+      toolTrace,
+      debateTrace,
+    };
+  }
+
+  private createDebateTrace(
+    agentName: string,
+    phase: DebateTraceEntry["phase"],
+    summary: string
+  ): DebateTraceEntry {
+    return {
+      agentName,
+      phase,
+      summary: summary.slice(0, 1200),
+      createdAt: new Date().toISOString(),
     };
   }
 }

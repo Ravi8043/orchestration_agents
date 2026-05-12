@@ -12,7 +12,10 @@ import {
   PriceSnapshot,
   PriceCandle,
   DerivedFeatures,
+  IndicatorResult,
+  LeanPriceSnapshot,
 } from "../../types/price.types.js";
+import type { IndicatorName } from "../../types/analysis.types.js";
 
 export class PriceService {
   constructor(private readonly finnhub: FinnhubProvider) { }
@@ -20,7 +23,7 @@ export class PriceService {
   /**
    * Fetch comprehensive price data 
    */
-  async getPriceData(ticker: string): Promise<PriceData> {
+  async getPriceData(ticker: string, timeframe = "30d"): Promise<PriceData> {
     if (!ticker?.trim()) {
       throw new AppError("Ticker is required", 400, true);
     }
@@ -37,9 +40,8 @@ export class PriceService {
         );
       }
 
-      // Fetch 30 days of candles for feature calculation
       const to = Math.floor(Date.now() / 1000);
-      const from = to - 30 * 24 * 60 * 60;
+      const from = to - this.resolveLookbackSeconds(timeframe);
 
       let candles: Candle[] = [];
       let useFallback = false;
@@ -63,8 +65,7 @@ export class PriceService {
       // Build snapshot
       const snapshot = this.buildSnapshot(quote, candles, useFallback);
 
-      // Extract last 5 candles for agent context
-      const recentCandles = this.extractRecentCandles(candles, 5);
+      const recentCandles = this.extractRecentCandles(candles, 10);
 
       // Calculate derived features
       const derivedFeatures = this.calculateDerivedFeatures(
@@ -81,6 +82,61 @@ export class PriceService {
     } catch (error) {
       logger.error({ err: error, ticker }, "PriceService.getPriceData failed");
       throw new AppError("Failed to fetch price data", 500, true);
+    }
+  }
+
+  async getLeanSnapshot(ticker: string, timeframe = "30d"): Promise<LeanPriceSnapshot> {
+    const priceData = await this.getPriceData(ticker, timeframe);
+
+    return {
+      ticker: ticker.toUpperCase(),
+      timeframe,
+      snapshot: priceData.snapshot,
+      recentCandles: priceData.recentCandles,
+      derivedFeatures: {
+        sma10: priceData.derivedFeatures.sma10,
+        sma30: priceData.derivedFeatures.sma30,
+      },
+      dataAvailability: {
+        hasCandles: priceData.recentCandles.length > 0,
+        candleCount: priceData.recentCandles.length,
+        asOf: new Date(priceData.snapshot.timestamp).toISOString(),
+      },
+    };
+  }
+
+  async calculateIndicator(
+    ticker: string,
+    timeframe: string,
+    indicator: IndicatorName
+  ): Promise<IndicatorResult> {
+    const priceData = await this.getPriceData(ticker, timeframe);
+    const features = priceData.derivedFeatures;
+
+    switch (indicator) {
+      case "rsi14":
+        return { indicator, value: features.rsi14 };
+      case "macd":
+        return {
+          indicator,
+          value: {
+            macd: features.macd,
+            signal: features.macdSignal,
+            histogram: features.macdHistogram,
+          },
+        };
+      case "atrPercent":
+        return { indicator, value: features.atrPercent };
+      case "trend":
+        return {
+          indicator,
+          value: {
+            trend: features.trend,
+            trendStrength: features.trendStrength,
+          },
+        };
+      default:
+        throw new AppError("Unsupported indicator", 400, true);
     }
   }
 
@@ -110,6 +166,22 @@ export class PriceService {
   }
 
   // ─── Private: Snapshot Construction ────────────────────────────────────────
+
+  private resolveLookbackSeconds(timeframe: string): number {
+    const daysByTimeframe: Record<string, number> = {
+      "1d": 7,
+      "5d": 14,
+      "7d": 21,
+      "30d": 60,
+      "90d": 140,
+      "1y": 420,
+      "2y": 800,
+      "5y": 1900,
+    };
+
+    const days = daysByTimeframe[timeframe] ?? daysByTimeframe["30d"];
+    return days * 24 * 60 * 60;
+  }
 
   private buildSnapshot(
     quote: QuoteResponse,
@@ -164,13 +236,18 @@ export class PriceService {
     useFallback: boolean
   ): DerivedFeatures {
     if (useFallback || candles.length < 30) {
-      // Return zero-initialized features if insufficient data
       return {
         sma10: 0,
         sma30: 0,
+        rsi14: null,
+        macd: null,
+        macdSignal: null,
+        macdHistogram: null,
         atrPercent: 0,
         priceVsSma10Percent: 0,
         priceVsSma30Percent: 0,
+        trend: "INSUFFICIENT_DATA",
+        trendStrength: 0,
       };
     }
 
@@ -178,17 +255,30 @@ export class PriceService {
 
     const sma10 = this.calculateSma(closes.slice(-10));
     const sma30 = this.calculateSma(closes.slice(-30));
+    const rsi14 = this.calculateRsi(closes, 14);
+    const macd = this.calculateMacd(closes);
     const atrPercent = this.calculateVolatility(candles);
 
     const priceVsSma10Percent = ((currentPrice - sma10) / sma10) * 100;
     const priceVsSma30Percent = ((currentPrice - sma30) / sma30) * 100;
+    const trend = this.classifyTrend(priceVsSma10Percent, priceVsSma30Percent);
+    const trendStrength = Math.min(
+      100,
+      Math.round((Math.abs(priceVsSma10Percent) + Math.abs(priceVsSma30Percent)) * 5)
+    );
 
     return {
       sma10: Number(sma10.toFixed(2)),
       sma30: Number(sma30.toFixed(2)),
+      rsi14: rsi14 === null ? null : Number(rsi14.toFixed(2)),
+      macd: macd.macd === null ? null : Number(macd.macd.toFixed(4)),
+      macdSignal: macd.signal === null ? null : Number(macd.signal.toFixed(4)),
+      macdHistogram: macd.histogram === null ? null : Number(macd.histogram.toFixed(4)),
       atrPercent: Number(atrPercent.toFixed(2)),
       priceVsSma10Percent: Number(priceVsSma10Percent.toFixed(2)),
       priceVsSma30Percent: Number(priceVsSma30Percent.toFixed(2)),
+      trend,
+      trendStrength,
     };
   }
 
@@ -218,6 +308,95 @@ export class PriceService {
     if (values.length === 0) return 0;
     const sum = values.reduce((acc, v) => acc + v, 0);
     return sum / values.length;
+  }
+
+  private calculateRsi(closes: number[], period: number): number | null {
+    if (closes.length <= period) return null;
+
+    let gains = 0;
+    let losses = 0;
+
+    for (let i = closes.length - period; i < closes.length; i++) {
+      const delta = closes[i] - closes[i - 1];
+      if (delta >= 0) {
+        gains += delta;
+      } else {
+        losses += Math.abs(delta);
+      }
+    }
+
+    const averageGain = gains / period;
+    const averageLoss = losses / period;
+    if (averageLoss === 0) return 100;
+
+    const relativeStrength = averageGain / averageLoss;
+    return 100 - 100 / (1 + relativeStrength);
+  }
+
+  private calculateMacd(closes: number[]): {
+    macd: number | null;
+    signal: number | null;
+    histogram: number | null;
+  } {
+    if (closes.length < 35) {
+      return { macd: null, signal: null, histogram: null };
+    }
+
+    const ema12 = this.calculateEmaSeries(closes, 12);
+    const ema26 = this.calculateEmaSeries(closes, 26);
+    const macdSeries = ema12
+      .map((value, index) => {
+        const slow = ema26[index];
+        return value === null || slow === null ? null : value - slow;
+      })
+      .filter((value): value is number => value !== null);
+
+    if (macdSeries.length < 9) {
+      return { macd: null, signal: null, histogram: null };
+    }
+
+    const signalSeries = this.calculateEmaSeries(macdSeries, 9);
+    const macd = macdSeries[macdSeries.length - 1];
+    const signal = signalSeries[signalSeries.length - 1];
+
+    if (signal === null) {
+      return { macd, signal: null, histogram: null };
+    }
+
+    return { macd, signal, histogram: macd - signal };
+  }
+
+  private calculateEmaSeries(values: number[], period: number): Array<number | null> {
+    const multiplier = 2 / (period + 1);
+    const series: Array<number | null> = [];
+    let previousEma: number | null = null;
+
+    values.forEach((value, index) => {
+      if (index < period - 1) {
+        series.push(null);
+        return;
+      }
+
+      if (index === period - 1) {
+        previousEma = this.calculateSma(values.slice(0, period));
+        series.push(previousEma);
+        return;
+      }
+
+      previousEma = value * multiplier + (previousEma as number) * (1 - multiplier);
+      series.push(previousEma);
+    });
+
+    return series;
+  }
+
+  private classifyTrend(
+    priceVsSma10Percent: number,
+    priceVsSma30Percent: number
+  ): DerivedFeatures["trend"] {
+    if (priceVsSma10Percent > 1 && priceVsSma30Percent > 1) return "UPTREND";
+    if (priceVsSma10Percent < -1 && priceVsSma30Percent < -1) return "DOWNTREND";
+    return "SIDEWAYS";
   }
 
   private calculateVolatility(candles: Candle[]): number {

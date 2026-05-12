@@ -29,6 +29,8 @@ model AnalysisRun {
   status            RunStatus @default(PENDING)
   agentOutputs      Json?
   consensusData     Json?
+  toolTrace         Json?
+  debateTrace       Json?
   errorMessage      String?
   retryCount        Int       @default(0)
   llmModel          String    @default("gpt-5-mini") @db.VarChar(100)

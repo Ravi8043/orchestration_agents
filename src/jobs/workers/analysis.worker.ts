@@ -1,6 +1,6 @@
 import { Worker } from "bullmq";
 import { env } from "../../config/env.js";
-import { redisConnection } from "../../config/redis.js";
+import { disconnectRedis, getRedisConnection } from "../../config/redis.js";
 import { logger } from "../../config/logger.js";
 import { connectDb, disconnectDb } from "../../config/db.js";
 import { processRunAnalysis } from "../processors/run-analysis.processor.js";
@@ -13,7 +13,7 @@ async function startWorker(): Promise<void> {
     async (job) => {
       await processRunAnalysis(job.data.runId);
     },
-    { connection: redisConnection }
+    { connection: getRedisConnection() }
   );
 
   worker.on("completed", (job) => {
@@ -26,6 +26,7 @@ async function startWorker(): Promise<void> {
 
   const shutdown = async () => {
     await worker.close();
+    await disconnectRedis();
     await disconnectDb();
     process.exit(0);
   };

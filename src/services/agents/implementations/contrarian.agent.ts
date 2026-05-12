@@ -1,11 +1,12 @@
 import { BaseAgent } from "../base/base-agent.js";
-import type { AgentIdentity, AgentRunContext } from "../base/base-agent.js";
+import type { AgentIdentity, AgentPromptContext } from "../base/base-agent.js";
 import { specialistOutputSchema, type SpecialistOutput } from "../schemas/agent.schemas.js";
 import {
+  buildContrarianRevisionPrompt,
   buildContrarianSystemPrompt,
-  buildContrarianUserPrompt,
+  buildContrarianEvidencePrompt,
 } from "../prompts/contrarian.prompt.js";
-import type { AnalysisDataset, AgentOutput } from "../../../types/analysis.types.js";
+import type { AnalysisContext } from "../../../types/analysis.types.js";
 
 export class ContrarianAgent extends BaseAgent<SpecialistOutput> {
   readonly identity: AgentIdentity = {
@@ -15,32 +16,12 @@ export class ContrarianAgent extends BaseAgent<SpecialistOutput> {
 
   readonly outputSchema = specialistOutputSchema;
 
-  buildContext(dataset: AnalysisDataset): AgentRunContext {
+  buildPromptContext(context: AnalysisContext): AgentPromptContext {
     return {
       systemPrompt: buildContrarianSystemPrompt(),
-      userPrompt: buildContrarianUserPrompt(dataset),
+      evidencePrompt: buildContrarianEvidencePrompt(context),
+      revisionPrompt: buildContrarianRevisionPrompt,
       temperature: 0.5, // slightly higher creativity for contrarian thinking
-    };
-  }
-
-  /**
-   * Run this agent against a dataset and return a normalized AgentOutput.
-   */
-  async analyze(dataset: AnalysisDataset): Promise<AgentOutput> {
-    const context = this.buildContext(dataset);
-    const result = await this.generate(context);
-
-    return {
-      name: this.identity.name,
-      role: this.identity.role,
-      action: result.action,
-      score: result.score,
-      confidence: result.confidence,
-      reasoning: result.reasoning,
-      bullCase: result.bullCase,
-      bearCase: result.bearCase,
-      keyRisks: result.keyRisks,
-      keyData: result.keyData,
     };
   }
 }

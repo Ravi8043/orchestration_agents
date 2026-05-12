@@ -38,7 +38,7 @@ export class ModeratorAgent extends BaseAgent<ConsensusOutput> {
     agentOutputs: AgentOutput[]
   ): Promise<ConsensusData> {
     const context = this.buildContext(dataset, agentOutputs);
-    const result = await this.generate(context);
+    const result = await this.generate(context); //result has consensus output type
 
     return {
       action: result.action,

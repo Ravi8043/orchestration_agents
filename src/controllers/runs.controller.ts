@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
-import type { RunStatus } from "../generated/prisma/enums.js";
 import { AnalysisService } from "../services/analysis/analysis.service.js";
+import type { RunStatus } from "../generated/prisma/client.js";
 
 const analysisService = new AnalysisService();
 

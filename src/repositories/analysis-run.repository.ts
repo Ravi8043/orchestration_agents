@@ -139,4 +139,4 @@ export class AnalysisRunRepository {
       runsLast24h
     };
   }
-}
+} 

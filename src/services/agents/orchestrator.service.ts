@@ -3,6 +3,7 @@ import { MomentumTraderAgent } from "./implementations/momentum-trader.agent.js"
 import { ValueInvestorAgent } from "./implementations/value-investor.agent.js";
 import { ContrarianAgent } from "./implementations/contrarian.agent.js";
 import { ModeratorAgent } from "./implementations/moderator.agent.js";
+
 import type {
   AnalysisDataset,
   AgentOutput,
@@ -24,59 +25,107 @@ import type {
  */
 export class OrchestratorService {
   private readonly momentumTrader = new MomentumTraderAgent();
+
   private readonly valueInvestor = new ValueInvestorAgent();
+
   private readonly contrarian = new ContrarianAgent();
+
   private readonly moderator = new ModeratorAgent();
 
   async run(dataset: AnalysisDataset): Promise<OrchestratorResult> {
     const { ticker } = dataset;
-    logger.info({ ticker }, "Orchestrator: starting multi-agent analysis");
+
+    logger.info(
+      { ticker },
+      "Orchestrator: starting multi-agent analysis"
+    );
 
     const startMs = Date.now();
 
     // ── Phase 1: Run specialist agents concurrently ──────────────────────
-    logger.info({ ticker }, "Orchestrator: dispatching specialist agents");
 
-    const specialistResults = [];
+    logger.info(
+      { ticker },
+      "Orchestrator: dispatching specialist agents"
+    );
+
     const agentsToRun = [
       this.momentumTrader,
       this.valueInvestor,
       this.contrarian,
     ];
 
-    for (const agent of agentsToRun) {
-      try {
-        const result = await agent.analyze(dataset);
-        specialistResults.push({ status: "fulfilled" as const, value: result });
-      } catch (error) {
-        specialistResults.push({ status: "rejected" as const, reason: error });
-      }
-    }
+    /**
+     * Promise.allSettled()
+     *
+     * Runs ALL agent promises concurrently.
+     *
+     * Unlike Promise.all():
+     * - one failure DOES NOT crash everything
+     * - we receive both fulfilled and rejected results
+     * [
+  {
+    status: "fulfilled",
+    value: "hello"
+  },
+
+  {
+    status: "rejected",
+    reason: "boom"
+  }
+]
+// That structure is built into JavaScript itself.
+     */
+    const specialistResults = await Promise.allSettled(
+      agentsToRun.map((agent) => agent.analyze(dataset))
+    );
 
     const agentOutputs: AgentOutput[] = [];
     const failures: string[] = [];
 
+    // ── Process settled results ───────────────────────────────────────────
+
     for (const result of specialistResults) {
+      // Successful agent execution
       if (result.status === "fulfilled") {
         agentOutputs.push(result.value);
       } else {
+        // Normalize error safely
         const errorMsg =
           result.reason instanceof Error
             ? result.reason.message
             : String(result.reason);
+
         failures.push(errorMsg);
+
         logger.error(
-          { err: result.reason, ticker },
+          {
+            ticker,
+            err: result.reason,
+          },
           "Orchestrator: specialist agent failed"
         );
       }
     }
 
-    // Require at least 2 specialist outputs to form meaningful consensus
+    // ── Require minimum successful agents ────────────────────────────────
+
     if (agentOutputs.length < 2) {
-      const errorDetail = `Only ${agentOutputs.length} of 3 specialists succeeded. Failures: ${failures.join("; ")}`;
-      logger.error({ ticker, failures }, "Orchestrator: insufficient specialist outputs");
-      throw new Error(`Orchestration failed: ${errorDetail}`);
+      const errorDetail =
+        `Only ${agentOutputs.length} of 3 specialists succeeded. ` +
+        `Failures: ${failures.join("; ")}`;
+
+      logger.error(
+        {
+          ticker,
+          failures,
+        },
+        "Orchestrator: insufficient specialist outputs"
+      );
+
+      throw new Error(
+        `Orchestration failed: ${errorDetail}`
+      );
     }
 
     logger.info(
@@ -84,28 +133,44 @@ export class OrchestratorService {
         ticker,
         successCount: agentOutputs.length,
         failCount: failures.length,
-        agents: agentOutputs.map((a) => a.name),
+        agents: agentOutputs.map(
+          (a) => a.name
+        ),
       },
       "Orchestrator: specialist phase complete"
     );
 
     // ── Phase 2: Moderator synthesis ─────────────────────────────────────
-    logger.info({ ticker }, "Orchestrator: dispatching moderator agent");
 
-    const consensus = await this.moderator.synthesize(dataset, agentOutputs);
+    logger.info(
+      { ticker },
+      "Orchestrator: dispatching moderator agent"
+    );
 
-    const totalDurationMs = Date.now() - startMs;
+    const consensus =
+      await this.moderator.synthesize(
+        dataset,
+        agentOutputs
+      );
+
+    const totalDurationMs =
+      Date.now() - startMs;
+
     logger.info(
       {
         ticker,
         totalDurationMs,
         consensusAction: consensus.action,
         consensusScore: consensus.score,
-        consensusConfidence: consensus.confidence,
+        consensusConfidence:
+          consensus.confidence,
       },
       "Orchestrator: analysis complete"
     );
 
-    return { agentOutputs, consensus };
+    return {
+      agentOutputs,
+      consensus,
+    };
   }
 }

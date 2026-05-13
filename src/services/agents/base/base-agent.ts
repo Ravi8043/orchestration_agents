@@ -1,5 +1,3 @@
-import { generateObject, generateText, stepCountIs } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import { logger } from "../../../config/logger.js";
 import { env } from "../../../config/env.js";
@@ -10,10 +8,9 @@ import type {
     ToolTraceEntry,
 } from "../../../types/analysis.types.js";
 import type { AgentToolFactory } from "../tools/agent-tool.factory.js";
+import { ProviderFactory } from "../../../factories/provider.factory.js";
 
-const googleProvider = createGoogleGenerativeAI({
-    apiKey: env.GOOGLE_API_KEY || "",
-});
+const aiProvider = new ProviderFactory();
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -84,7 +81,7 @@ export abstract class BaseAgent<TOutput> {
      * @param context - System + user prompts and optional overrides.
      * @returns The validated, typed output object.
      */
-    protected async generate(context: AgentRunContext): Promise<TOutput> {
+    protected async generate(context: AgentRunContext): Promise<{ object: TOutput; provider: string; degraded: boolean; fallbackReason?: string }> {
         const { name, role } = this.identity;
         const temperature = context.temperature ?? DEFAULT_TEMPERATURE;
         const maxRetries = context.maxRetries ?? DEFAULT_MAX_RETRIES;
@@ -94,8 +91,8 @@ export abstract class BaseAgent<TOutput> {
         const startMs = Date.now();
 
         try {
-            const { object } = await generateObject({
-                model: googleProvider(DEFAULT_MODEL),
+            const result = await aiProvider.generateObject({
+                agentName: name,
                 schema: this.outputSchema,
                 system: context.systemPrompt,
                 prompt: context.userPrompt,
@@ -106,11 +103,11 @@ export abstract class BaseAgent<TOutput> {
 
             const durationMs = Date.now() - startMs;
             logger.info(
-                { agent: name, durationMs },
+                { agent: name, durationMs, degraded: result.degraded },
                 "Agent generation completed"
             );
 
-            return object;
+            return result;
         } catch (error) {
             const durationMs = Date.now() - startMs;
             logger.error(
@@ -128,7 +125,7 @@ export abstract class BaseAgent<TOutput> {
         const promptContext = this.buildPromptContext(context);
         const traceStart = toolFactory.getTrace().length;
 
-        const evidenceText = await this.runToolLoop({
+        const evidenceLoop = await this.runToolLoop({
             systemPrompt: promptContext.systemPrompt,
             prompt: promptContext.evidencePrompt,
             tools: toolFactory.createSpecialistTools(this.identity.name),
@@ -136,9 +133,12 @@ export abstract class BaseAgent<TOutput> {
         });
 
         const toolCalls = toolFactory.getTrace().slice(traceStart);
-        const result = await this.finalizeSpecialistOutput(context, evidenceText, toolCalls);
+        const finalizeResult = await this.finalizeSpecialistOutput(context, evidenceLoop.text, toolCalls);
 
-        return this.toAgentOutput(result, toolCalls);
+        const degraded = evidenceLoop.degraded || finalizeResult.degraded;
+        const fallbackReason = evidenceLoop.fallbackReason || finalizeResult.fallbackReason;
+
+        return this.toAgentOutput(finalizeResult.object, toolCalls, evidenceLoop.provider, degraded, fallbackReason);
     }
 
     async revise(
@@ -156,7 +156,7 @@ export abstract class BaseAgent<TOutput> {
             )
             .join("\n");
 
-        const revisionText = await this.runToolLoop({
+        const revisionLoop = await this.runToolLoop({
             systemPrompt: promptContext.systemPrompt,
             prompt: promptContext.revisionPrompt({
                 originalEvidence: JSON.stringify(originalOutput, null, 2),
@@ -168,11 +168,14 @@ export abstract class BaseAgent<TOutput> {
 
         const additionalToolCalls = toolFactory.getTrace().slice(traceStart);
         const allToolCalls = [...originalOutput.toolCalls, ...additionalToolCalls];
-        const result = await this.finalizeSpecialistOutput(context, revisionText, allToolCalls);
+        const finalizeResult = await this.finalizeSpecialistOutput(context, revisionLoop.text, allToolCalls);
+
+        const degraded = originalOutput.degraded || revisionLoop.degraded || finalizeResult.degraded;
+        const fallbackReason = revisionLoop.fallbackReason || finalizeResult.fallbackReason || originalOutput.fallbackReason;
 
         return {
-            ...this.toAgentOutput(result, allToolCalls),
-            revisionNotes: revisionText.slice(0, 1000),
+            ...this.toAgentOutput(finalizeResult.object, allToolCalls, revisionLoop.provider, degraded, fallbackReason),
+            revisionNotes: revisionLoop.text.slice(0, 1000),
         };
     }
 
@@ -181,38 +184,36 @@ export abstract class BaseAgent<TOutput> {
         prompt: string;
         tools: Record<string, unknown>;
         temperature: number;
-    }): Promise<string> {
+    }): Promise<{ text: string; provider: string; degraded: boolean; fallbackReason?: string }> {
         const { name, role } = this.identity;
         const startMs = Date.now();
         logger.info({ agent: name, role }, "Agent tool loop started");
 
-        const result = await generateText({
-            model: googleProvider(DEFAULT_MODEL),
+        const result = await aiProvider.generateText({
+            agentName: name,
             system: input.systemPrompt,
             prompt: input.prompt,
-            tools: input.tools as any,
-            toolChoice: "auto",
-            stopWhen: stepCountIs(5),
+            tools: input.tools,
             temperature: input.temperature,
             maxRetries: DEFAULT_MAX_RETRIES,
-            maxOutputTokens: 1000,
+            maxTokens: 1000,
         });
 
         logger.info(
-            { agent: name, durationMs: Date.now() - startMs, finishReason: result.finishReason },
+            { agent: name, durationMs: Date.now() - startMs, provider: result.provider },
             "Agent tool loop completed"
         );
 
-        return result.text;
+        return result;
     }
 
     private async finalizeSpecialistOutput(
         context: AnalysisContext,
         evidenceText: string,
         toolCalls: ToolTraceEntry[]
-    ): Promise<TOutput> {
-        const { object } = await generateObject({
-            model: googleProvider(DEFAULT_MODEL),
+    ): Promise<{ object: TOutput; provider: string; degraded: boolean; fallbackReason?: string }> {
+        const result = await aiProvider.generateObject({
+            agentName: this.identity.name,
             schema: this.outputSchema,
             system:
                 "Convert the agent's evidence notes into the required structured output. Do not invent evidence. If evidence is thin, lower confidence and say so.",
@@ -225,13 +226,19 @@ Agent evidence notes:
 ${evidenceText}`,
             temperature: 0.2,
             maxRetries: DEFAULT_MAX_RETRIES,
-            maxOutputTokens: 900,
+            maxTokens: 900,
         });
 
-        return object;
+        return result;
     }
 
-    private toAgentOutput(result: TOutput, toolCalls: ToolTraceEntry[]): AgentOutput {
+    private toAgentOutput(
+        result: TOutput,
+        toolCalls: ToolTraceEntry[],
+        provider: string,
+        degraded?: boolean,
+        fallbackReason?: string
+    ): AgentOutput {
         const output = result as any;
         const evidence: AgentEvidence[] = toolCalls.length
             ? toolCalls.map((call) => ({
@@ -260,6 +267,9 @@ ${evidenceText}`,
             keyData: output.keyData,
             evidence,
             toolCalls,
+            provider,
+            degraded,
+            fallbackReason,
         };
     }
 

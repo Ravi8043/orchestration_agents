@@ -1,5 +1,3 @@
-import { generateObject } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { BaseAgent } from "../base/base-agent.js";
 import type { AgentIdentity, AgentPromptContext } from "../base/base-agent.js";
 import { consensusOutputSchema, type ConsensusOutput } from "../schemas/agent.schemas.js";
@@ -15,10 +13,9 @@ import type {
   ToolTraceEntry,
 } from "../../../types/analysis.types.js";
 import type { AgentToolFactory } from "../tools/agent-tool.factory.js";
+import { ProviderFactory } from "../../../factories/provider.factory.js";
 
-const googleProvider = createGoogleGenerativeAI({
-  apiKey: env.GOOGLE_API_KEY || "",
-});
+const aiProvider = new ProviderFactory();
 
 export class ModeratorAgent extends BaseAgent<ConsensusOutput> {
   readonly identity: AgentIdentity = {
@@ -46,7 +43,7 @@ export class ModeratorAgent extends BaseAgent<ConsensusOutput> {
     toolFactory: AgentToolFactory
   ): Promise<ConsensusData> {
     const traceStart = toolFactory.getTrace().length;
-    const moderationNotes = await this.runToolLoop({
+    const moderationLoop = await this.runToolLoop({
       systemPrompt: buildModeratorSystemPrompt(),
       prompt: buildModeratorEvidencePrompt(context, agentOutputs),
       tools: toolFactory.createModeratorTools(this.identity.name),
@@ -54,8 +51,8 @@ export class ModeratorAgent extends BaseAgent<ConsensusOutput> {
     });
     const toolCalls = toolFactory.getTrace().slice(traceStart);
 
-    const { object: result } = await generateObject({
-      model: googleProvider("gemini-2.0-flash"),
+    const result = await aiProvider.generateObject({
+      agentName: this.identity.name,
       schema: this.outputSchema,
       system:
         "Convert moderation notes into the required consensus schema. Do not invent evidence. Key risks and reasoning must reflect evidence-backed and weak claims.",
@@ -68,25 +65,32 @@ Moderator tool calls:
 ${this.summarizeToolCalls(toolCalls)}
 
 Moderation notes:
-${moderationNotes}`,
+${moderationLoop.text}`,
       temperature: 0.2,
       maxRetries: 2,
-      maxOutputTokens: 1000,
+      maxTokens: 1000,
     });
 
+    const anyAgentDegraded = agentOutputs.some((o) => o.degraded);
+    const degraded = moderationLoop.degraded || result.degraded || anyAgentDegraded;
+    const fallbackReason = moderationLoop.fallbackReason || result.fallbackReason;
+
     return {
-      action: result.action,
-      score: result.score,
-      confidence: result.confidence,
-      allocation: result.allocation,
-      riskLevel: result.riskLevel,
-      reasoning: result.reasoning,
-      stopLoss: result.stopLoss,
-      takeProfit: result.takeProfit,
-      timeHorizon: result.timeHorizon,
-      keyRisks: result.keyRisks,
-      analystWeightsUsed: result.analystWeightsUsed,
-      disagreements: result.disagreements,
+      action: result.object.action,
+      score: result.object.score,
+      confidence: result.object.confidence,
+      allocation: result.object.allocation,
+      riskLevel: result.object.riskLevel,
+      reasoning: result.object.reasoning,
+      stopLoss: result.object.stopLoss,
+      takeProfit: result.object.takeProfit,
+      timeHorizon: result.object.timeHorizon,
+      keyRisks: result.object.keyRisks,
+      analystWeightsUsed: result.object.analystWeightsUsed,
+      disagreements: result.object.disagreements,
+      provider: result.provider,
+      degraded,
+      fallbackReason,
     };
   }
 

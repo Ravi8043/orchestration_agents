@@ -57,6 +57,9 @@ export interface AgentOutput {
   evidence: AgentEvidence[];
   toolCalls: ToolTraceEntry[];
   revisionNotes?: string;
+  provider?: string;
+  degraded?: boolean;
+  fallbackReason?: string;
 }
 
 // ─── Consensus Data (stored in DB as JSON) ───────────────────────────────────
@@ -74,6 +77,9 @@ export interface ConsensusData {
   keyRisks: string[];
   analystWeightsUsed: Record<string, number>;
   disagreements: string[];
+  provider?: string;
+  degraded?: boolean;
+  fallbackReason?: string;
 }
 
 // ─── Analysis Dataset (built by DatasetService, consumed by agents) ──────────

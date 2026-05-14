@@ -40,7 +40,8 @@ export class OrchestratorService {
     context: AnalysisContext,
     trace: ToolTraceEntry[]
   ) => AgentToolFactory;
-
+  //here in options you can pass custom agents if not it will use the default ones
+  //same for the moderator and tool factory
   constructor(options: {
     agents?: SpecialistAgent[];
     moderator?: Moderator;
@@ -58,13 +59,14 @@ export class OrchestratorService {
 
   async run(context: AnalysisContext): Promise<OrchestratorResult> {
     const { ticker } = context;
-    const toolTrace: OrchestratorResult["toolTrace"] = [];
-    const debateTrace: DebateTraceEntry[] = [];
+    const toolTrace: OrchestratorResult["toolTrace"] = []; //what tool was called and what it returned
+    const debateTrace: DebateTraceEntry[] = []; //what reasoning agent gave in debate
     const toolFactory = this.createToolFactory(context, toolTrace);
 
     logger.info({ ticker, runId: context.runId }, "Orchestrator: starting agentic analysis");
     const startMs = Date.now();
-
+    //agentsToRun instantiates agents and uses analyze and revise methods
+    //Promise.allSettled runs all agents in parallel
     const evidenceResults = await Promise.allSettled(
       this.agentsToRun.map((agent) => agent.analyze(context, toolFactory))
     );

@@ -35,6 +35,7 @@ export class AgentToolFactory {
   private readonly priceService: PriceService;
   private readonly newsService: NewsService;
   private readonly leanSnapshotCache = new Map<string, Promise<LeanPriceSnapshot>>();
+  //3 agents simultaneously call get_price_snapshot , so we cache the results 
   private readonly indicatorCache = new Map<string, Promise<IndicatorResult>>();
   private readonly newsCache = new Map<string, Promise<Awaited<ReturnType<NewsService["getCompanyNews"]>>>>();
 
@@ -72,7 +73,7 @@ export class AgentToolFactory {
   getTrace(): ToolTraceEntry[] {
     return this.trace;
   }
-
+  //this function llm calls tool -> execute(input) runs -> traceTool runs -> callback is executed -> cache is updated -> result is returned
   private createPriceSnapshotTool(agentName: string) {
     return tool({
       description:

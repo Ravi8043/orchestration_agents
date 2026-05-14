@@ -56,11 +56,8 @@ This backend system orchestrates **three specialist AI agents** — each with a 
 
 ## Why This Architecture
 
-Earlier versions of this system passed a pre-built dataset directly into prompts — making the "agents" essentially prompt personas. The current design is fundamentally different:
-
 ```
-Before:  Data → Prompt → LLM → Output    (prompt persona)
-After:   Context → LLM → Tool Calls → Evidence → Structured Output    (true agent)
+Context → LLM → Tool Calls → Evidence → Structured Output    (true agent)
 ```
 
 1. **Agents receive only run context** — `ticker`, `timeframe`, `includeSocial`, and `runId`
